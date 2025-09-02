@@ -1,88 +1,84 @@
-//
-//  ContentView.swift
-//  ToDoapp
-//
-//  Created by Ayumu Urakami on 2024/12/12.
-//
-
 import SwiftUI
-import CoreData
+
+enum TaskStatus: String, CaseIterable, Identifiable {
+    case task = "Task"
+    case doing = "Doing"
+    case done = "Done"
+
+    var id: String { rawValue }
+}
+
+struct TaskItem: Identifiable {
+    let id = UUID()
+    var title: String
+    var status: TaskStatus = .task
+    var date: Date
+}
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
+    @State private var tasks: [TaskItem] = []
+    @State private var newTaskTitle: String = ""
+    @State private var selectedDate: Date = Date()
 
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
+    private var tasksForSelectedDate: [TaskItem] {
+        tasks.filter { Calendar.current.isDate($0.date, inSameDayAs: selectedDate) }
+    }
 
     var body: some View {
-        NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
+        VStack {
+            DatePicker("Select Date", selection: $selectedDate, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+
+            HStack(alignment: .top, spacing: 16) {
+                ForEach(TaskStatus.allCases) { status in
+                    VStack {
+                        Text(status.rawValue)
+                            .font(.headline)
+                        List {
+                            ForEach(tasksForSelectedDate.filter { $0.status == status }) { item in
+                                Text(item.title)
+                                    .contextMenu {
+                                        ForEach(TaskStatus.allCases) { target in
+                                            if target != status {
+                                                Button(target.rawValue) {
+                                                    move(item, to: target)
+                                                }
+                                            }
+                                        }
+                                    }
+                            }
+                        }
                     }
-                }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
+                    .frame(maxWidth: .infinity)
                 }
             }
-            Text("Select an item")
+
+            HStack {
+                TextField("New Task", text: $newTaskTitle)
+                    .textFieldStyle(.roundedBorder)
+                Button("Add") {
+                    addTask()
+                }
+                .disabled(newTaskTitle.isEmpty)
+            }
+            .padding()
         }
+        .padding()
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
+    private func addTask() {
+        let item = TaskItem(title: newTaskTitle, date: selectedDate)
+        tasks.append(item)
+        newTaskTitle = ""
     }
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
+    private func move(_ item: TaskItem, to status: TaskStatus) {
+        if let index = tasks.firstIndex(where: { $0.id == item.id }) {
+            tasks[index].status = status
         }
     }
 }
 
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
-
 #Preview {
-    ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+    ContentView()
 }
